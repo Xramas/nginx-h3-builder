@@ -24,26 +24,30 @@ jobs:
         curl https://sh.rustup.rs -sSf | sh -s -- -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    - name: Clone quiche (with boringssl submodule)
+    - name: Prepare Build Environment
       run: |
-        mkdir -p build && cd build
+        mkdir -p build
+        cd build
 
+        # 下载 quiche + 子模块
         git clone https://github.com/cloudflare/quiche
         cd quiche
         git submodule update --init --recursive
-        cd ../..
+        cargo build --release
+        cd ..
 
-    - name: Build Nginx ${{ env.NGINX_VERSION }}
-      run: |
-        cd build
-
+        # 下载 nginx
         curl -O https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
         tar zxvf nginx-${NGINX_VERSION}.tar.gz
 
-        git clone $BROTLI_REPO
-        cd ngx_brotli && git submodule update --init && cd ..
+        # 下载 brotli
+        git clone https://github.com/google/ngx_brotli
+        cd ngx_brotli && git submodule update --init --recursive
+        cd ..
 
-        cd nginx-${NGINX_VERSION}
+    - name: Build Nginx ${{ env.NGINX_VERSION }}
+      run: |
+        cd build/nginx-${NGINX_VERSION}
 
         ./configure \
           --prefix=$PWD/nginx-install \
@@ -54,7 +58,7 @@ jobs:
           --with-http_stub_status_module \
           --with-http_gzip_static_module \
           --with-cc-opt="-O2 -I../quiche/include" \
-          --with-ld-opt="-Wl,--as-needed -Wl,-rpath,$PWD/../quiche/target/release -L../quiche/target/release" \
+          --with-ld-opt="-Wl,--as-needed -Wl,-rpath,../quiche/target/release -L../quiche/target/release" \
           --with-openssl=../quiche/deps/boringssl \
           --add-module=../ngx_brotli
 
