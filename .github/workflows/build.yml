@@ -1,4 +1,4 @@
-name: Build and Release Nginx Mainline
+name: Build and Release Nginx 1.25.4
 
 on:
   workflow_dispatch:
@@ -7,9 +7,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      NGINX_VERSION: 1.25.4
       BROTLI_REPO: https://github.com/google/ngx_brotli.git
       QUICHE_REPO: https://github.com/cloudflare/quiche
-      NGINX_MAINLINE: 1.25
 
     steps:
     - name: Checkout
@@ -24,28 +24,18 @@ jobs:
         curl https://sh.rustup.rs -sSf | sh -s -- -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    - name: Get Latest Nginx Version (${{ env.NGINX_MAINLINE }})
-      id: get_nginx
-      run: |
-        version=$(curl -s https://nginx.org/en/download.html \
-          | grep -oP "nginx-${NGINX_MAINLINE}\.\d+(?=\.tar\.gz)" \
-          | sed "s/nginx-//" | sort -V | tail -1)
-
-        echo "LATEST_VERSION=$version" >> $GITHUB_ENV
-        echo "Latest version resolved: $version"
-
-    - name: Build Nginx ${{ env.LATEST_VERSION }}
+    - name: Build Nginx ${{ env.NGINX_VERSION }}
       run: |
         mkdir -p build && cd build
 
         git clone --recursive $QUICHE_REPO
-        curl -O https://nginx.org/download/nginx-${LATEST_VERSION}.tar.gz
-        tar zxvf nginx-${LATEST_VERSION}.tar.gz
+        curl -O https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+        tar zxvf nginx-${NGINX_VERSION}.tar.gz
 
         git clone $BROTLI_REPO
         cd ngx_brotli && git submodule update --init && cd ..
 
-        cd nginx-${LATEST_VERSION}
+        cd nginx-${NGINX_VERSION}
 
         ./configure \
           --prefix=$PWD/nginx-install \
@@ -63,15 +53,15 @@ jobs:
         make -j$(nproc)
         make install
 
-        tar -czf nginx-${LATEST_VERSION}.tar.gz -C nginx-install .
+        tar -czf nginx-${NGINX_VERSION}.tar.gz -C nginx-install .
 
     - name: Upload to GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: nginx-${{ env.LATEST_VERSION }}
-        name: Nginx ${{ env.LATEST_VERSION }}
+        tag_name: nginx-${{ env.NGINX_VERSION }}
+        name: Nginx ${{ env.NGINX_VERSION }}
         body: |
-          自动构建 Nginx v${{ env.LATEST_VERSION }}（含 HTTP/3、Brotli 模块）
-        files: build/nginx-${{ env.LATEST_VERSION }}.tar.gz
+          自动构建 Nginx v${{ env.NGINX_VERSION }}（含 HTTP/3、Brotli 模块）
+        files: build/nginx-${{ env.NGINX_VERSION }}.tar.gz
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
