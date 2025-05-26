@@ -1,0 +1,77 @@
+name: Build and Release Nginx
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      BROTLI_REPO: https://github.com/google/ngx_brotli.git
+      QUICHE_REPO: https://github.com/cloudflare/quiche
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential libpcre3 libpcre3-dev zlib1g-dev libssl-dev \
+          cmake golang curl git unzip perl python3 nasm pkg-config clang jq
+
+        curl https://sh.rustup.rs -sSf | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Get latest Nginx version
+      id: get_nginx
+      run: |
+        latest=$(curl -s http://nginx.org/en/download.html | grep -oP 'nginx-\K[0-9.]+(?=\.tar\.gz)' | head -1)
+        echo "LATEST_VERSION=$latest" >> $GITHUB_ENV
+        echo "Latest version: $latest"
+
+    - name: Build Nginx
+      run: |
+        cd ${{ github.workspace }}
+        mkdir build && cd build
+
+        git clone --recursive $QUICHE_REPO
+        curl -O http://nginx.org/download/nginx-${LATEST_VERSION}.tar.gz
+        tar zxvf nginx-${LATEST_VERSION}.tar.gz
+
+        git clone $BROTLI_REPO
+        cd ngx_brotli && git submodule update --init && cd ..
+
+        cd nginx-${LATEST_VERSION}
+
+        ./configure \
+          --prefix=$PWD/nginx-install \
+          --with-http_ssl_module \
+          --with-http_v2_module \
+          --with-http_v3_module \
+          --with-http_realip_module \
+          --with-http_stub_status_module \
+          --with-http_gzip_static_module \
+          --with-cc-opt="-O2" \
+          --with-ld-opt="-Wl,--as-needed -Wl,-rpath,$PWD/../quiche/target/release" \
+          --with-openssl=../quiche/deps/boringssl \
+          --with-quiche=../quiche \
+          --add-module=../ngx_brotli
+
+        make -j$(nproc)
+        make install
+
+        tar -czf nginx-${LATEST_VERSION}.tar.gz -C nginx-install .
+
+        echo "RELEASE_NAME=nginx-${LATEST_VERSION}" >> $GITHUB_ENV
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: nginx-${{ env.LATEST_VERSION }}
+        name: Nginx ${{ env.LATEST_VERSION }}
+        body: |
+          自动构建 Nginx v${{ env.LATEST_VERSION }}（含 HTTP/3 + Brotli 模块）
+        files: build/nginx-${{ env.LATEST_VERSION }}.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
