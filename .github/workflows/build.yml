@@ -24,11 +24,19 @@ jobs:
         curl https://sh.rustup.rs -sSf | sh -s -- -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    - name: Build Nginx ${{ env.NGINX_VERSION }}
+    - name: Clone quiche (with boringssl submodule)
       run: |
         mkdir -p build && cd build
 
-        git clone --recursive $QUICHE_REPO
+        git clone https://github.com/cloudflare/quiche
+        cd quiche
+        git submodule update --init --recursive
+        cd ../..
+
+    - name: Build Nginx ${{ env.NGINX_VERSION }}
+      run: |
+        cd build
+
         curl -O https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
         tar zxvf nginx-${NGINX_VERSION}.tar.gz
 
